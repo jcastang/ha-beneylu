@@ -1,0 +1,38 @@
+name: Publish HACS release
+on:
+  push:
+    branches: [main]
+    paths:
+      - custom_components/beneylu/manifest.json
+      - .github/workflows/release.yml
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Read integration version
+        id: version
+        run: |
+          echo "version=$(python -c 'import json; print(json.load(open("custom_components/beneylu/manifest.json"))["version"])')" >> "$GITHUB_OUTPUT"
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+          gh release create "$TAG" --title "Beneylu School $TAG" --notes "Nouvelle version HACS : contenu des mots et notifications, enfants, classes, signatures, conversations et actions de lecture à la demande. Version bêta : API interne Beneylu susceptible de changer."
