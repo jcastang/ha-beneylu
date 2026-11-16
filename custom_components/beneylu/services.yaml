@@ -1,0 +1,28 @@
+get_post:
+  name: Récupérer un mot complet
+  description: Récupère un mot du cahier par identifiant, sans le marquer lu.
+  fields:
+    post_id:
+      name: Identifiant du mot
+      required: true
+      selector:
+        text:
+    entry_id:
+      name: Identifiant de la configuration (si plusieurs comptes)
+      selector:
+        text:
+read_conversation:
+  name: Lire une conversation (peut marquer les messages comme lus)
+  description: >-
+    Lit le contenu d'une conversation à la demande. Attention, cet appel
+    peut marquer les messages comme lus sur Beneylu.
+  fields:
+    conversation_id:
+      name: Identifiant de conversation
+      required: true
+      selector:
+        text:
+    entry_id:
+      name: Identifiant de la configuration (si plusieurs comptes)
+      selector:
+        text:

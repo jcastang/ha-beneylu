@@ -57,3 +57,20 @@ views:
 
           ---
           {% else %}Aucune notification disponible.{% endfor %}
+      - type: markdown
+        title: Conversations (liste, sans marquer comme lues)
+        content: >-
+          {% set conversations = state_attr('sensor.beneylu_famille_conversations', 'latest') or [] %}
+          {% for c in conversations %}
+          **{{ c.title if c.title is defined else (c.subject if c.subject is defined else c.id) }}**
+
+          {{ c | tojson }}
+
+          ---
+          {% else %}Aucune conversation.{% endfor %}
+      - type: markdown
+        title: Classes et écoles
+        content: >-
+          {% set groups = state_attr('sensor.beneylu_famille_classes_et_ecoles', 'names') or [] %}
+          {% for group in groups %}- {{ group }}
+          {% else %}Aucun groupe.{% endfor %}

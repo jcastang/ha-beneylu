@@ -30,6 +30,12 @@ def test_read_only_fetch_and_reauth():
             return httpx.Response(200, json={'refresh_token': 'next'}, headers={'set-cookie': 'BEARER=token; Path=/'})
         if path == '/api/auth/users/me':
             return httpx.Response(200, json={'id': 1, 'displayName': 'Parent', 'children': [{'id': 2, 'firstName': 'Alice'}]})
+        if path == '/api/auth/groups/classrooms-and-schools':
+            return httpx.Response(200, json=[{'id': 4, 'label': 'CE1'}])
+        if path == '/api/auth/users/lookup':
+            return httpx.Response(200, json=[])
+        if path == '/api/chat/family/conversations':
+            return httpx.Response(200, json=[{'id': 'c1', 'title': 'Enseignant'}])
         if path == '/api/family/posts':
             return httpx.Response(200, json={'posts': [], 'totalPages': 1})
         if path == '/api/notification/notifications-in-app':
@@ -43,5 +49,7 @@ def test_read_only_fetch_and_reauth():
             result = await client.fetch()
             assert result['unread'] == 3
             assert result['children'] == {2: 'Alice'}
+            assert result['groups'] == {4: 'CE1'}
+            assert result['conversations'][0]['title'] == 'Enseignant'
     asyncio.run(run())
-    assert all(method == 'GET' or path == '/api/auth/login_check' for method, path in calls)
+    assert all(method == 'GET' or path in ('/api/auth/login_check', '/api/auth/users/lookup') for method, path in calls)

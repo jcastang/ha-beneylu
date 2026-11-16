@@ -2,7 +2,7 @@
 
 Intégration personnalisée **non officielle**, en lecture seule, basée sur les routes API de [hclaria/beneylu-mcp](https://github.com/hclaria/beneylu-mcp). Ne nécessite aucun serveur MCP.
 
-**Statut : v0.1.0 bêta** — tests unitaires disponibles, mais pas encore validée sur un compte Beneylu réel.
+**Statut : bêta, couverture étendue de l'API** — tests unitaires disponibles, mais pas encore validée sur un compte Beneylu réel.
 
 ## Fonctionnalités
 
@@ -14,6 +14,33 @@ Intégration personnalisée **non officielle**, en lecture seule, basée sur les
 - Événements `beneylu_post_changed` et `beneylu_notification_changed`, ainsi que des entités event
 - **Contenu lisible** des mots du cahier et notifications : capteurs `Dernier mot` et `Dernière notification`, attribut `text` complet, historique récent en attribut `latest` (10 entrées) ; un capteur `Dernier mot` par enfant\n- Les messages privés restent comptabilisés mais leur contenu n'est pas récupéré automatiquement pour éviter de les marquer lus
 - Exemple de tableau de bord Lovelace dans `dashboard/beneylu.yaml`
+
+## Couverture de l'API hclaria/beneylu-mcp
+
+| Fonction upstream | Fonction Home Assistant |
+| --- | --- |
+| `get_account` | Capteur Compte Beneylu, enfants, classes et écoles |
+| `list_posts(page)` | Capteur Mots du cahier, texte et métadonnées |
+| `get_post(post_id)` | Action `beneylu.get_post` avec réponse détaillée |
+| `get_notifications(limit)` | Capteur Notifications, texte et lien |
+| `list_conversations` | Capteurs Conversations et Dernière conversation (liste seulement) |
+| `get_conversation(conversation_id)` | Action explicite `beneylu.read_conversation` (risque de marquer lu) |
+| `whats_new` | Détection périodique des changements et événements Home Assistant |
+| `ack(cursor)` | Non exposé : `ack` concerne le stockage local du serveur MCP, pas Beneylu |
+| `pending` | Non exposé : les événements HA ne garantissent pas la livraison de bout en bout |
+
+Les mots contiennent auteur, classes, enfants, texte, signatures, pièces jointes (nombre et identifiants), possibilité de réponse, lien et date. Les conversations sont listées sans ouverture des messages.
+
+Les actions `beneylu.get_post` et `beneylu.read_conversation` renvoient une réponse utilisable avec `response_variable` dans un script Home Assistant. L'action `read_conversation` n'est **jamais appelée automatiquement**.
+
+Exemple d'action à la demande :
+
+```yaml
+action: beneylu.read_conversation
+data:
+  conversation_id: "ID_DE_LA_CONVERSATION"
+response_variable: beneylu_messages
+```
 
 ## Lire le contenu dans Home Assistant
 
@@ -71,7 +98,7 @@ python -m compileall -q custom_components
 - Les notifications ne sont pas ventilées par enfant.
 - Les nouveaux enfants nécessitent un rechargement de l'intégration pour créer leurs entités.
 - La première collecte est une référence, sans événements historiques ; détection par comparaison de deux collectes, sans garantie de livraison de notifications.
-- Ne récupère pas automatiquement les contenus des conversations : cela pourrait les marquer lus côté école.
+- Le contenu des conversations est disponible **uniquement à la demande** via une action qui peut marquer les messages comme lus côté école.
 - La rotation du refresh token est conservée en mémoire, pas persistée après redémarrage.
 - Captcha et double authentification OTP non automatisés.
 - Éviter les tableaux de bord partagés et protéger les sauvegardes Home Assistant qui contiennent les identifiants.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
+from urllib.parse import quote
 import httpx
 
 BASE_URL = "https://school.beneylu.com"
@@ -28,10 +29,15 @@ def html_to_text(value):
     parser.feed(value or "")
     return "\n".join(x.strip() for x in "".join(parser.parts).splitlines() if x.strip())
 
-def normalize_post(raw, children, base_url=BASE_URL):
+def normalize_post(raw, children, base_url=BASE_URL, users=None, groups=None):
+    users = users or {}
+    groups = groups or {}
     ids = {int(a["userId"]) for a in (raw.get("linkedAudience") or {}).get("audience", []) if "userId" in a}
     signed = {int(s["signedForId"]) for s in raw.get("postSignatures") or [] if s.get("signedForId") is not None}
     pending = {int(x) for x in raw.get("signableFor") or []} - signed
+    audience = (raw.get("linkedAudience") or {}).get("audience") or []
+    group_ids = [int(a["groupId"]) for a in audience if a.get("groupId") is not None]
+    signatures = raw.get("postSignatures") or []
     date = raw.get("visibleAt") or raw.get("createdAt")
     return {
         "id": str(raw["id"]), "date": date, "text": html_to_text(raw.get("content")),
@@ -40,6 +46,14 @@ def normalize_post(raw, children, base_url=BASE_URL):
         "pending_signature_for": [children.get(i, str(i)) for i in sorted(pending)],
         "url": f"{base_url}/family-information/{raw['id']}",
         "attachments": len(raw.get("postAttachments") or []) + len(raw.get("postEmbeds") or []),
+        "author": users.get(raw.get("authorId")) or str(raw.get("authorId") or ""),
+        "groups": [groups.get(g) or str(g) for g in group_ids],
+        "signatures": [{"child": children.get(s.get("signedForId")) or str(s.get("signedForId") or ""),
+                        "by": users.get(s.get("signedById")) or str(s.get("signedById") or ""),
+                        "at": s.get("createdAt")} for s in signatures],
+        "replies_allowed": bool(raw.get("allowReplies")),
+        "attachment_ids": [str(a.get("id") or a.get("embedId") or a.get("mediaId") or "")
+                           for a in (raw.get("postAttachments") or []) + (raw.get("postEmbeds") or [])],
     }
 
 def normalize_notification(raw):
@@ -50,10 +64,10 @@ def normalize_notification(raw):
         "id": raw.get("id"),
         "date": raw.get("createdAt") or raw.get("date"),
         "kind": {"FAMILY": "mot", "CARDBOARD": "pancarte", "CALENDAR": "calendrier",
-                 "MEDIA_LIBRARY": "médiathèque"}.get(raw.get("type") or raw.get("kind"),
+                 "MEDIA_LIBRARY": "médiathèque"}.get(raw.get("appName") or raw.get("type") or raw.get("kind"),
                                                      raw.get("type") or raw.get("kind") or "notification"),
         "text": html_to_text(raw.get("content") or raw.get("text") or ""),
-        "url": raw.get("url") or "",
+        "url": (BASE_URL + raw["url"] if str(raw.get("url") or "").startswith("/") else raw.get("url") or ""),
         "read": bool(raw.get("read", False)),
     }
 
@@ -129,15 +143,65 @@ class BeneyluClient:
             except ValueError as exc:
                 raise BeneyluError("Invalid JSON response") from exc
 
+    async def lookup_users(self, ids):
+        """Read-only user-name lookup, via the upstream-supported POST endpoint."""
+        ids = sorted({int(i) for i in ids if i is not None})
+        if not ids:
+            return {}
+        async with self._lock:
+            if "BEARER" not in self.http.cookies:
+                await self._open_session()
+            response = await self._send("POST", "/api/auth/users/lookup", json={"ids": ids})
+            if response.status_code == 401:
+                self.http.cookies.clear()
+                await self._open_session()
+                response = await self._send("POST", "/api/auth/users/lookup", json={"ids": ids})
+            if response.status_code >= 400:
+                raise BeneyluError(f"User lookup failed: HTTP {response.status_code}")
+            return {int(u["id"]): u.get("displayName") or "" for u in response.json() or []}
+
+    async def list_conversations(self):
+        """List conversations without opening their messages."""
+        return await self.get("/api/chat/family/conversations")
+
+    async def get_conversation(self, conversation_id):
+        """ONLY CALL ON EXPLICIT USER ACTION: may mark messages as read."""
+        if not conversation_id or "/" in str(conversation_id):
+            raise ValueError("Invalid conversation ID")
+        return await self.get(f"/api/chat/family/conversations/{quote(str(conversation_id), safe='')}/messages")
+
+    async def get_post(self, post_id, max_pages=100):
+        for page in range(1, max_pages + 1):
+            result = await self.get("/api/family/posts", {"page": page, "status": "published"}) or {}
+            for raw in result.get("posts") or []:
+                if str(raw.get("id")) == str(post_id):
+                    me = await self.get("/api/auth/users/me") or {}
+                    children = {int(c["id"]): c.get("firstName") or str(c["id"])
+                                for c in me.get("children") or []}
+                    return normalize_post(raw, children)
+            if page >= int(result.get("totalPages") or 1):
+                break
+        raise BeneyluError("Post not found")
+
     async def fetch(self, max_pages=5):
         me = await self.get("/api/auth/users/me") or {}
         children = {int(c["id"]): c.get("firstName") or str(c["id"]) for c in me.get("children") or []}
-        posts = []
+        groups_raw = await self.get("/api/auth/groups/classrooms-and-schools") or []
+        groups = {int(g["id"]): g.get("label") or "" for g in groups_raw}
+        raws = []
+        total_pages = 1
         for page in range(1, max_pages + 1):
             result = await self.get("/api/family/posts", {"page": page, "status": "published"}) or {}
-            posts.extend(normalize_post(raw, children) for raw in result.get("posts") or [] if is_visible(raw))
+            raws.extend(raw for raw in result.get("posts") or [] if is_visible(raw))
+            total_pages = int(result.get("totalPages") or 1)
             if page >= int(result.get("totalPages") or 1):
                 break
+        ids = {raw.get("authorId") for raw in raws}
+        for raw in raws:
+            ids.update(s.get("signedById") for s in raw.get("postSignatures") or [])
+        users = await self.lookup_users(ids)
+        posts = [normalize_post(raw, children, users=users, groups=groups) for raw in raws]
+        conversations = await self.list_conversations()
         notifications = [normalize_notification(raw) for raw in (await self.get("/api/notification/notifications-in-app") or [])]
         count = await self.get("/api/chat/family/count")
         unread = count.get("count", 0) if isinstance(count, dict) else count
@@ -146,5 +210,6 @@ class BeneyluClient:
         except (TypeError, ValueError):
             unread = 0
         return {"account": me.get("displayName") or self.username or "Beneylu",
-                "children": children, "posts": posts, "notifications": notifications,
-                "unread": unread}
+                "children": children, "groups": groups, "posts": posts,
+                "post_pages": total_pages, "notifications": notifications,
+                "conversations": conversations, "unread": unread}
