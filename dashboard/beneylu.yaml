@@ -14,13 +14,29 @@ views:
           - sensor.beneylu_famille_notifications
           - binary_sensor.beneylu_famille_signature_en_attente
       - type: markdown
-        title: Derniers mots
+        title: Dernier mot (texte complet)
+        content: >-
+          {% set entity = 'sensor.beneylu_famille_dernier_mot' %}
+          {% set text = state_attr(entity, 'text') %}
+          {% if text %}
+          **{{ state_attr(entity, 'date') }} — {{ (state_attr(entity, 'children') or []) | join(', ') }}**
+
+          {{ text }}
+
+          {% if state_attr(entity, 'pending_signature_for') %}
+          **Signature attendue : {{ state_attr(entity, 'pending_signature_for') | join(', ') }}**
+          {% endif %}
+
+          [Ouvrir dans Beneylu]({{ state_attr(entity, 'url') }})
+          {% else %}Aucun mot disponible.{% endif %}
+      - type: markdown
+        title: Cahier de liaison (10 derniers mots)
         content: >-
           {% set posts = state_attr('sensor.beneylu_famille_mots_du_cahier', 'latest') or [] %}
           {% for post in posts %}
           **{{ post.date[:10] }} — {{ post.children | join(', ') }}**
 
-          {{ post.text[:350] }}
+          {{ post.text }}
 
           {% if post.pending_signature_for %}**Signature attendue**{% endif %}
 
@@ -28,3 +44,16 @@ views:
 
           ---
           {% else %}Aucun mot disponible.{% endfor %}
+      - type: markdown
+        title: Notifications (texte)
+        content: >-
+          {% set items = state_attr('sensor.beneylu_famille_notifications', 'latest') or [] %}
+          {% for item in items %}
+          **{{ item.date[:10] if item.date else '' }} — {{ item.kind }}**
+
+          {{ item.text }}
+
+          {% if item.url %}[Ouvrir dans Beneylu]({{ item.url }}){% endif %}
+
+          ---
+          {% else %}Aucune notification disponible.{% endfor %}

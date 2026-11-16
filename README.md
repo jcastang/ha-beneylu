@@ -12,8 +12,18 @@ Intégration personnalisée **non officielle**, en lecture seule, basée sur les
 - Capteurs : mots du cahier, signatures en attente, messages non lus, notifications
 - Capteurs binaires de signature à effectuer
 - Événements `beneylu_post_changed` et `beneylu_notification_changed`, ainsi que des entités event
-- Historique récent exposé en attribut `latest`
+- **Contenu lisible** des mots du cahier et notifications : capteurs `Dernier mot` et `Dernière notification`, attribut `text` complet, historique récent en attribut `latest` (10 entrées) ; un capteur `Dernier mot` par enfant\n- Les messages privés restent comptabilisés mais leur contenu n'est pas récupéré automatiquement pour éviter de les marquer lus
 - Exemple de tableau de bord Lovelace dans `dashboard/beneylu.yaml`
+
+## Lire le contenu dans Home Assistant
+
+- Le capteur **Dernier mot** affiche les 250 premiers caractères comme état (limite Home Assistant : 255), et le texte intégral dans l'attribut `text`.
+- Le capteur **Dernière notification** fonctionne de la même manière.
+- Les capteurs **Mots du cahier** et **Notifications** exposent les 10 derniers éléments avec leur texte dans l'attribut `latest`.
+- Le tableau de bord `dashboard/beneylu.yaml` affiche les mots et notifications **sans tronquer le texte**.
+- Le contenu des conversations privées n'est pas lu automatiquement : l'API de consultation peut marquer les messages comme lus.
+
+Les contenus apparaissent dans les attributs des entités et dans le tableau de bord. Ils ne sont pas conservés dans une base séparée par l'intégration, mais Home Assistant peut les enregistrer dans son historique : sécuriser l'accès aux sauvegardes.
 
 ## Installation HACS
 

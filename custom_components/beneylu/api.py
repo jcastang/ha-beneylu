@@ -42,6 +42,21 @@ def normalize_post(raw, children, base_url=BASE_URL):
         "attachments": len(raw.get("postAttachments") or []) + len(raw.get("postEmbeds") or []),
     }
 
+def normalize_notification(raw):
+    """Expose readable notification content instead of only a count."""
+    if not isinstance(raw, dict):
+        return {"id": None, "date": None, "kind": "unknown", "text": str(raw), "url": "", "read": False}
+    return {
+        "id": raw.get("id"),
+        "date": raw.get("createdAt") or raw.get("date"),
+        "kind": {"FAMILY": "mot", "CARDBOARD": "pancarte", "CALENDAR": "calendrier",
+                 "MEDIA_LIBRARY": "médiathèque"}.get(raw.get("type") or raw.get("kind"),
+                                                     raw.get("type") or raw.get("kind") or "notification"),
+        "text": html_to_text(raw.get("content") or raw.get("text") or ""),
+        "url": raw.get("url") or "",
+        "read": bool(raw.get("read", False)),
+    }
+
 def is_visible(raw, now=None):
     now = now or datetime.now(timezone.utc)
     try:
@@ -123,7 +138,7 @@ class BeneyluClient:
             posts.extend(normalize_post(raw, children) for raw in result.get("posts") or [] if is_visible(raw))
             if page >= int(result.get("totalPages") or 1):
                 break
-        notifications = await self.get("/api/notification/notifications-in-app") or []
+        notifications = [normalize_notification(raw) for raw in (await self.get("/api/notification/notifications-in-app") or [])]
         count = await self.get("/api/chat/family/count")
         unread = count.get("count", 0) if isinstance(count, dict) else count
         try:
