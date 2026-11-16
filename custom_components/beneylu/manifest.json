@@ -1,0 +1,16 @@
+{
+  "domain": "beneylu",
+  "name": "Beneylu School",
+  "version": "0.1.0",
+  "config_flow": true,
+  "documentation": "https://github.com/jcastang/ha-beneylu",
+  "issue_tracker": "https://github.com/jcastang/ha-beneylu/issues",
+  "codeowners": [
+    "@jcastang"
+  ],
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "requirements": [
+    "httpx>=0.27,<1"
+  ]
+}

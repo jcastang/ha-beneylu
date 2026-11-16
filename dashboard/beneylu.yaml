@@ -1,0 +1,30 @@
+# Dashboard example: adapt entity IDs to those created on your instance.
+title: Beneylu School
+views:
+  - title: École
+    path: ecole
+    icon: mdi:school
+    cards:
+      - type: entities
+        title: Famille
+        entities:
+          - sensor.beneylu_famille_messages_non_lus
+          - sensor.beneylu_famille_mots_du_cahier
+          - sensor.beneylu_famille_mots_a_signer
+          - sensor.beneylu_famille_notifications
+          - binary_sensor.beneylu_famille_signature_en_attente
+      - type: markdown
+        title: Derniers mots
+        content: >-
+          {% set posts = state_attr('sensor.beneylu_famille_mots_du_cahier', 'latest') or [] %}
+          {% for post in posts %}
+          **{{ post.date[:10] }} — {{ post.children | join(', ') }}**
+
+          {{ post.text[:350] }}
+
+          {% if post.pending_signature_for %}**Signature attendue**{% endif %}
+
+          [Ouvrir dans Beneylu]({{ post.url }})
+
+          ---
+          {% else %}Aucun mot disponible.{% endfor %}
