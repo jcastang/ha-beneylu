@@ -5,6 +5,9 @@ from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from urllib.parse import quote
 import httpx
+import logging
+
+_LOGGER = logging.getLogger(__name__)
 
 BASE_URL = "https://school.beneylu.com"
 
@@ -52,6 +55,12 @@ def normalize_post(raw, children, base_url=BASE_URL, users=None, groups=None):
                         "by": users.get(s.get("signedById")) or str(s.get("signedById") or ""),
                         "at": s.get("createdAt")} for s in signatures],
         "replies_allowed": bool(raw.get("allowReplies")),
+        "type": raw.get("type"),
+        "interaction_type": raw.get("interaction"),
+        "interactions": [{"for_child_id": x.get("signedForId"), "value": x.get("value"),
+                          "date": x.get("createdAt")} for x in raw.get("postInteractions") or []],
+        "replies": [],
+        "media": [],
         "attachment_ids": [str(a.get("id") or a.get("embedId") or a.get("mediaId") or "")
                            for a in (raw.get("postAttachments") or []) + (raw.get("postEmbeds") or [])],
     }
@@ -141,7 +150,20 @@ class BeneyluClient:
             try:
                 return response.json()
             except ValueError as exc:
+                # Count endpoints may return a plain numeric body.
+                if path.endswith("/count") and response.text.strip().isdigit():
+                    return int(response.text.strip())
                 raise BeneyluError("Invalid JSON response") from exc
+
+    async def get_optional(self, path, params=None, default=None):
+        """Optional features must not break the whole integration."""
+        try:
+            return await self.get(path, params)
+        except BeneyluAuthError:
+            raise
+        except BeneyluError as exc:
+            _LOGGER.debug("Optional Beneylu endpoint unavailable: %s (%s)", path.split("?")[0], type(exc).__name__)
+            return default
 
     async def lookup_users(self, ids):
         """Read-only user-name lookup, via the upstream-supported POST endpoint."""
@@ -186,7 +208,10 @@ class BeneyluClient:
     async def fetch(self, max_pages=5):
         me = await self.get("/api/auth/users/me") or {}
         children = {int(c["id"]): c.get("firstName") or str(c["id"]) for c in me.get("children") or []}
-        groups_raw = await self.get("/api/auth/groups/classrooms-and-schools") or []
+        groups_raw = await self.get_optional("/api/auth/groups", default=None)
+        if groups_raw is None:
+            groups_raw = await self.get_optional("/api/auth/groups/classrooms-and-schools", default=[])
+        groups_raw = groups_raw or []
         groups = {int(g["id"]): g.get("label") or "" for g in groups_raw}
         raws = []
         total_pages = 1
@@ -199,9 +224,43 @@ class BeneyluClient:
         ids = {raw.get("authorId") for raw in raws}
         for raw in raws:
             ids.update(s.get("signedById") for s in raw.get("postSignatures") or [])
-        users = await self.lookup_users(ids)
+        try:
+            users = await self.lookup_users(ids)
+        except BeneyluAuthError:
+            raise
+        except BeneyluError:
+            users = {}
         posts = [normalize_post(raw, children, users=users, groups=groups) for raw in raws]
-        conversations = await self.list_conversations()
+        conversations = await self.get_optional("/api/chat/family/conversations", default=[])
+        apps = await self.get_optional("/api/auth/apps/mine", default=[])
+        family_permissions = await self.get_optional("/api/family/init", default={})
+        chat_permissions = await self.get_optional("/api/chat/family/init", default={})
+        notification_groups = await self.get_optional("/api/notification/notification-groups", default=[])
+        # Enrich only the most recent posts to keep polling bounded.
+        for post in posts[:10]:
+            post_id = quote(post["id"], safe="")
+            replies = await self.get_optional(f"/api/family/posts/{post_id}/replies", default=[])
+            if isinstance(replies, list):
+                post["replies"] = [
+                    {"text": html_to_text(r.get("content")), "date": r.get("createdAt"),
+                     "author_id": r.get("authorId"), "id": str(r.get("id"))}
+                    for r in replies if isinstance(r, dict) and not r.get("deleted")
+                ]
+            for embed_id in post["attachment_ids"][:5]:
+                if not embed_id:
+                    continue
+                embed = await self.get_optional(f"/api/media-library/embeds/{quote(embed_id, safe='')}", default={})
+                if not isinstance(embed, dict):
+                    continue
+                for attachment in (embed.get("attachments") or [])[:10]:
+                    media = attachment.get("media") or {}
+                    if not isinstance(media, dict):
+                        media = {}
+                    post["media"].append({
+                        "name": media.get("label"), "mime_type": media.get("mime_type"),
+                        "downloadable": bool(media.get("downloadable")),
+                        "media_id": media.get("id"),
+                    })
         notifications = [normalize_notification(raw) for raw in (await self.get("/api/notification/notifications-in-app") or [])]
         count = await self.get("/api/chat/family/count")
         unread = count.get("count", 0) if isinstance(count, dict) else count
@@ -212,4 +271,9 @@ class BeneyluClient:
         return {"account": me.get("displayName") or self.username or "Beneylu",
                 "children": children, "groups": groups, "posts": posts,
                 "post_pages": total_pages, "notifications": notifications,
-                "conversations": conversations, "unread": unread}
+                "conversations": conversations, "unread": unread,
+                "apps": [{"name": a.get("name"), "open": bool(a.get("open"))}
+                         for a in apps if isinstance(a, dict)] if isinstance(apps, list) else [],
+                "family_permissions": family_permissions or {},
+                "chat_permissions": chat_permissions or {},
+                "notification_groups": notification_groups if isinstance(notification_groups, list) else []}

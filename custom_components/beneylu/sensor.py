@@ -13,6 +13,9 @@ NAMES = {
     "last_conversation": "Dernière conversation",
     "groups": "Classes et écoles",
     "account": "Compte Beneylu",
+    "apps": "Applications disponibles",
+    "replies": "Réponses aux mots",
+    "media": "Médias du cahier",
 }
 ICONS = {
     "unread": "mdi:email", "posts": "mdi:notebook", "pending": "mdi:draw-pen",
@@ -20,6 +23,7 @@ ICONS = {
     "last_notification": "mdi:message-text",
     "conversations": "mdi:forum", "last_conversation": "mdi:message-outline",
     "groups": "mdi:school", "account": "mdi:account-school",
+    "apps": "mdi:apps", "replies": "mdi:comment-text-multiple", "media": "mdi:paperclip",
 }
 
 def latest_post(posts):
@@ -34,10 +38,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data["beneylu"][entry.entry_id][1]
     entities = [BeneyluSensor(coordinator, key) for key in
                 ("unread", "posts", "pending", "notifications", "last_post", "last_notification",
-                 "conversations", "last_conversation", "groups", "account")]
+                 "conversations", "last_conversation", "groups", "account", "apps", "replies", "media")]
     for child_id in coordinator.data["children"]:
         entities.extend(BeneyluSensor(coordinator, key, child_id)
-                        for key in ("posts", "pending", "last_post"))
+                        for key in ("posts", "pending", "last_post", "replies", "media"))
     async_add_entities(entities)
 
 class BeneyluSensor(BeneyluEntity, SensorEntity):
@@ -54,6 +58,12 @@ class BeneyluSensor(BeneyluEntity, SensorEntity):
             return len(self.coordinator.data["notifications"])
         if self.key == "posts":
             return len(self.posts())
+        if self.key == "apps":
+            return sum(bool(a.get("open")) for a in self.coordinator.data.get("apps", []))
+        if self.key == "replies":
+            return sum(len(p.get("replies") or []) for p in self.posts())
+        if self.key == "media":
+            return sum(len(p.get("media") or []) for p in self.posts())
         if self.key == "groups":
             return len(self.coordinator.data.get("groups", {}))
         if self.key == "account":
@@ -81,6 +91,14 @@ class BeneyluSensor(BeneyluEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self):
+        if self.key == "apps":
+            return {"applications": self.coordinator.data.get("apps", []),
+                    "family_permissions": self.coordinator.data.get("family_permissions", {}),
+                    "chat_permissions": self.coordinator.data.get("chat_permissions", {})}
+        if self.key in ("replies", "media"):
+            return {"latest": [{"post_id": p["id"], "date": p.get("date"),
+                                "items": p.get(self.key, [])}
+                               for p in self.posts() if p.get(self.key)][:10]}
         if self.key == "account":
             return {"children": list(self.coordinator.data.get("children", {}).values()),
                     "groups": list(self.coordinator.data.get("groups", {}).values())}
@@ -104,7 +122,8 @@ class BeneyluSensor(BeneyluEntity, SensorEntity):
             post = latest_post(self.posts())
             return {"text": post["text"], "date": post["date"], "children": post["children"],
                     "url": post["url"], "pending_signature_for": post["pending_signature_for"],
-                    "attachments": post["attachments"]} if post else {}
+                    "attachments": post["attachments"], "replies": post.get("replies", []),
+                    "media": post.get("media", []), "interactions": post.get("interactions", [])} if post else {}
         if self.key == "last_notification":
             notification = latest_notification(self.coordinator.data["notifications"])
             return {"text": notification.get("text", ""), "date": notification.get("date"),

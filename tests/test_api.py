@@ -30,6 +30,16 @@ def test_read_only_fetch_and_reauth():
             return httpx.Response(200, json={'refresh_token': 'next'}, headers={'set-cookie': 'BEARER=token; Path=/'})
         if path == '/api/auth/users/me':
             return httpx.Response(200, json={'id': 1, 'displayName': 'Parent', 'children': [{'id': 2, 'firstName': 'Alice'}]})
+        if path == '/api/auth/groups':
+            return httpx.Response(200, json=[{'id': 4, 'label': 'Classe exemple'}])
+        if path == '/api/auth/apps/mine':
+            return httpx.Response(200, json=[{'name': 'FAMILY', 'open': True}])
+        if path == '/api/family/init':
+            return httpx.Response(200, json={'can_view': True})
+        if path == '/api/chat/family/init':
+            return httpx.Response(200, json={'can_view_conversation': True})
+        if path == '/api/notification/notification-groups':
+            return httpx.Response(200, json=[])
         if path == '/api/auth/groups/classrooms-and-schools':
             return httpx.Response(200, json=[{'id': 4, 'label': 'CE1'}])
         if path == '/api/auth/users/lookup':
@@ -37,9 +47,15 @@ def test_read_only_fetch_and_reauth():
         if path == '/api/chat/family/conversations':
             return httpx.Response(200, json=[{'id': 'c1', 'title': 'Enseignant'}])
         if path == '/api/family/posts':
-            return httpx.Response(200, json={'posts': [], 'totalPages': 1})
+            return httpx.Response(200, json={'posts': [{'id': 'demo', 'content': '<p>Exemple fictif</p>',
+                'createdAt': '2026-01-01T12:00:00+00:00', 'signableFor': [], 'postSignatures': [],
+                'linkedAudience': {'audience': []}, 'postAttachments': [], 'postEmbeds': []}],
+                'totalPages': 1})
         if path == '/api/notification/notifications-in-app':
             return httpx.Response(200, json=[])
+        if path == '/api/family/posts/demo/replies':
+            return httpx.Response(200, json=[{'id': 'reply-demo', 'content': '<p>Réponse fictive</p>',
+                                              'createdAt': '2026-01-02T12:00:00+00:00'}])
         if path == '/api/chat/family/count':
             return httpx.Response(200, json={'count': 3})
         return httpx.Response(404)
@@ -48,8 +64,9 @@ def test_read_only_fetch_and_reauth():
             client = api.BeneyluClient('parent', 'pass', client=http)
             result = await client.fetch()
             assert result['unread'] == 3
+            assert result['posts'][0]['replies'][0]['text'] == 'Réponse fictive'
             assert result['children'] == {2: 'Alice'}
-            assert result['groups'] == {4: 'CE1'}
-            assert result['conversations'][0]['title'] == 'Enseignant'
+            assert result['groups'] == {4: 'Classe exemple'}
+            assert result['conversations'][0]['title'] == 'Enseignant'\n            assert result['apps'][0]['name'] == 'FAMILY'\n            assert result['family_permissions']['can_view'] is True
     asyncio.run(run())
     assert all(method == 'GET' or path in ('/api/auth/login_check', '/api/auth/users/lookup') for method, path in calls)

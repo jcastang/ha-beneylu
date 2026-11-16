@@ -1,7 +1,7 @@
 {
   "domain": "beneylu",
   "name": "Beneylu School",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "config_flow": true,
   "documentation": "https://github.com/jcastang/ha-beneylu",
   "issue_tracker": "https://github.com/jcastang/ha-beneylu/issues",

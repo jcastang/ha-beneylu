@@ -2,7 +2,7 @@
 
 Intégration personnalisée **non officielle**, en lecture seule, basée sur les routes API de [hclaria/beneylu-mcp](https://github.com/hclaria/beneylu-mcp). Ne nécessite aucun serveur MCP.
 
-**Statut : bêta, couverture étendue de l'API** — tests unitaires disponibles, mais pas encore validée sur un compte Beneylu réel.
+**Statut : v0.3.0 bêta — routes vérifiées par inspection des formes de réponses HTTP, sans publication de données de compte** — tests unitaires disponibles, mais pas encore validée sur un compte Beneylu réel.
 
 ## Fonctionnalités
 
@@ -51,6 +51,24 @@ response_variable: beneylu_messages
 - Le contenu des conversations privées n'est pas lu automatiquement : l'API de consultation peut marquer les messages comme lus.
 
 Les contenus apparaissent dans les attributs des entités et dans le tableau de bord. Ils ne sont pas conservés dans une base séparée par l'intégration, mais Home Assistant peut les enregistrer dans son historique : sécuriser l'accès aux sauvegardes.
+
+## v0.3.0 — enrichissements et confidentialité
+
+Cette version exploite des **chemins d'API observés** : `/api/family/init`,
+`/api/family/posts/{id}/replies`, `/api/media-library/embeds/{id}`,
+`/api/auth/apps/mine`, `/api/auth/groups`,
+`/api/chat/family/init` et `/api/notification/notification-groups`.
+
+- Les **réponses** des 10 derniers mots sont disponibles en attributs (contenu, date, identifiant d'auteur).
+- Les **médias intégrés** sont représentés par leurs métadonnées (nom, type MIME, identifiant), **sans URLs signées**.
+- Les **interactions** (type, valeur, date) sont exposées sur les mots.
+- Les **applications ouvertes** et les permissions de lecture du compte sont visibles dans le capteur `Applications disponibles`.
+- Des capteurs `Réponses aux mots` et `Médias du cahier` sont créés par famille et enfant.
+- Les requêtes facultatives ne bloquent pas l'ensemble de l'intégration si une fonctionnalité n'est pas activée.
+- L'enrichissement des réponses et médias est limité aux 10 mots les plus récents pour limiter la charge sur Beneylu.
+- Aucun HAR, cookie, jeton, identifiant réel, nom d'enfant ou contenu de compte n'est inclus dans ce dépôt. Les tests utilisent uniquement des exemples fictifs.
+
+**Confidentialité dans Home Assistant :** les textes scolaires et métadonnées restent visibles dans les attributs des entités, et peuvent être conservés par Recorder. Limiter l'accès aux tableaux de bord et aux sauvegardes.
 
 ## Installation HACS
 
